@@ -6,20 +6,24 @@ import json
 SOL_MINT = "So11111111111111111111111111111111111111112"
 HELIUS_METADATA_API = "https://api.helius.xyz/v0/token-metadata?api-key=YOUR_HELIUS_API_KEY"
 
-def fetch_jupiter_markets():
+st.set_page_config(page_title="Solana Token Listener", layout="wide")
+
+def fetch_jupiter_markets(progress):
     url = "https://quote-api.jup.ag/v1/markets"
+    progress.progress(0.1, "开始请求 Jupiter API...")
     try:
         response = requests.get(url)
-        st.write(f"API 状态码: {response.status_code}")
-        st.write(f"API 响应前500字: {response.text[:500]}")
-        response.raise_for_status()
+        progress.progress(0.3, "收到响应，正在解析数据...")
         data = response.json()
+        progress.progress(0.4, f"API 状态码: {response.status_code}")
+        progress.progress(0.5, f"API 响应预览: {response.text[:200]}")
         return data
     except Exception as e:
+        progress.progress(1.0, f"API 请求失败: {e}")
         st.error(f"API 请求失败，错误: {e}")
         return []
 
-def filter_markets(markets, days=7):
+def filter_markets(markets, days=7, progress=None):
     cutoff_time = datetime.utcnow() - timedelta(days=days)
     filtered = []
     count_no_launch = 0
@@ -43,13 +47,17 @@ def filter_markets(markets, days=7):
             filtered.append(m)
         else:
             count_not_sol += 1
-    st.write(f"过滤统计：无launchTime: {count_no_launch}，太早: {count_time_old}，非SOL配对: {count_not_sol}")
+    if progress:
+        progress.progress(0.7, f"过滤完成：无launchTime: {count_no_launch}，太早: {count_time_old}，非SOL配对: {count_not_sol}")
     return filtered
 
-def get_top_markets(filtered_markets, top_n=20):
+def get_top_markets(filtered_markets, top_n=20, progress=None):
     sorted_markets = sorted(filtered_markets, key=lambda x: x.get("liquidityUSD", 0), reverse=True)
+    if progress:
+        progress.progress(0.85, "流动性排序完成。")
     return sorted_markets[:top_n]
 
+@st.cache_data(ttl=60*5)
 def get_token_icon_url(mint):
     try:
         url = f"{HELIUS_METADATA_API}&mint={mint}"
@@ -72,52 +80,72 @@ def get_token_icon_url(mint):
     except Exception:
         return None
 
-st.title("Solana 活跃交易对排行榜")
+st.markdown(
+    "<h1 style='text-align: left; color: #3c3c3c; margin-bottom: 12px;'>Solana 活跃交易对排行榜</h1>",
+    unsafe_allow_html=True,
+)
 
-if 'top20' not in st.session_state:
-    st.session_state['top20'] = []
+st.markdown("点击下方按钮，刷新Solana链最新活跃Token市场。")
+progress = st.empty()
+cols = st.columns([1, 3])
 
-if st.button("刷新市场数据"):
-    st.write("==============================")
-    st.write(f"开始刷新 Jupiter 市场数据... {datetime.now().strftime('%H:%M:%S')}")
-    markets = fetch_jupiter_markets()
-    st.write(f"获取到原始市场数量: {len(markets)}")
-    if len(markets) > 0:
-        st.write(f"样本市场字段: {list(markets[0].keys())}")
-        st.write(f"样本市场内容: {json.dumps(markets[0], ensure_ascii=False, indent=2)[:600]} ...")
-    else:
-        st.warning("API返回为空或不是列表。")
-    st.write("正在过滤符合条件的市场...")
-    filtered = filter_markets(markets, days=7)
-    st.write(f"筛选出最近7天上线且与SOL配对的市场数量: {len(filtered)}")
-    if len(filtered) == 0:
-        st.warning("⚠️ 警告: 没有符合过滤条件的市场！请检查API结构或过滤规则是否正确。")
-    st.write("正在按流动性排序...")
-    top20 = get_top_markets(filtered)
-    st.session_state['top20'] = top20
-    st.write("Top 20 结果如下：")
-    st.dataframe(top20)
-    st.success(f"刷新完成，共显示 {len(top20)} 个市场。")
+with cols[0]:
+    if st.button("刷新市场数据", use_container_width=True):
+        st.session_state['refresh'] = True
 
-if st.button("显示Top 20 Token图标"):
+# 用于进度区
+with cols[0]:
+    if st.session_state.get('refresh'):
+        progress_bar = st.progress(0.0, "初始化...")
+        markets = fetch_jupiter_markets(progress_bar)
+        progress_bar.progress(0.2, f"原始市场数量: {len(markets)}")
+        if len(markets) > 0:
+            st.write(f"字段示例: {list(markets[0].keys())}")
+        else:
+            st.warning("API返回为空或不是列表。")
+        filtered = filter_markets(markets, days=7, progress=progress_bar)
+        progress_bar.progress(0.8, f"符合条件市场数量: {len(filtered)}")
+        top20 = get_top_markets(filtered, progress=progress_bar)
+        progress_bar.progress(1.0, f"完成，Top 20共{len(top20)}条。")
+        st.session_state['top20'] = top20
+        st.session_state['refresh'] = False
+
+with cols[1]:
     top20 = st.session_state.get('top20', [])
-    for i, m in enumerate(top20):
-        base_name = m.get("baseSymbol", "N/A")
-        base_mint = m.get("baseMint")
-        quote_name = m.get("quoteSymbol", "N/A")
-        quote_mint = m.get("quoteMint")
-
-        base_icon_url = get_token_icon_url(base_mint)
-        quote_icon_url = get_token_icon_url(quote_mint)
-
-        cols = st.columns(4)
-        cols[0].write(f"{i+1}. {base_name}")
-        if base_icon_url:
-            cols[1].image(base_icon_url, width=40)
-        else:
-            cols[1].write("无图标")
-        cols[2].write(f"{quote_name}")
-        if quote_icon_url:
-            cols[3].image(quote_icon_url, width=40)
-        else:
-            cols[3].write("无图标")
+    if top20:
+        st.markdown("#### Top 20 交易对（按流动性USD）")
+        # 生成固定表格风格
+        import pandas as pd
+        show_data = []
+        base_icons = []
+        quote_icons = []
+        for m in top20:
+            base = m.get("baseSymbol", "N/A")
+            quote = m.get("quoteSymbol", "N/A")
+            base_icon_url = get_token_icon_url(m.get("baseMint"))
+            quote_icon_url = get_token_icon_url(m.get("quoteMint"))
+            base_icons.append(base_icon_url)
+            quote_icons.append(quote_icon_url)
+            show_data.append({
+                "Base": base,
+                "Quote": quote,
+                "Base Mint": m.get("baseMint"),
+                "Quote Mint": m.get("quoteMint"),
+                "Launch": m.get("launchTime", "")[:10],
+                "LiquidityUSD": round(m.get("liquidityUSD", 0), 2)
+            })
+        df = pd.DataFrame(show_data)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.markdown("##### Token 图标一览")
+        for i, m in enumerate(top20):
+            row = st.columns([1, 1, 1, 1])
+            row[0].write(f"{i+1}. {m.get('baseSymbol', 'N/A')}")
+            if base_icons[i]:
+                row[1].image(base_icons[i], width=36)
+            else:
+                row[1].write("无图标")
+            row[2].write(f"{m.get('quoteSymbol', 'N/A')}")
+            if quote_icons[i]:
+                row[3].image(quote_icons[i], width=36)
+            else:
+                row[3].write("无图标")
