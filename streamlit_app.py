@@ -25,7 +25,7 @@ def fetch_helius_transactions(limit=500):
         response.raise_for_status()
         data = response.json()
 
-        # Helius 返回的数据是一个列表，而不是 dict，直接返回 list
+        # Helius 返回的数据是列表，直接返回
         return data if isinstance(data, list) else []
     except Exception as e:
         st.error(f"API 请求失败：{e}")
@@ -36,25 +36,12 @@ def filter_swap_pairs(transactions):
 
     for tx in transactions:
         try:
-            inner_instructions = tx.get("innerInstructions", [])
-
-            token_transfers = []
-            for inner in inner_instructions:
-                instructions = inner.get("instructions", [])
-                for inst in instructions:
-                    parsed = inst.get("parsed", {})
-                    if parsed.get("type") == "transfer":
-                        info = parsed.get("info", {})
-                        mint = info.get("mint")
-                        if mint:
-                            token_transfers.append(mint)
-
-            if len(token_transfers) >= 2:
-                base_mint = token_transfers[0]
-                quote_mint = token_transfers[1]
-                pair = (base_mint, quote_mint)
+            swap_event = tx.get("events", {}).get("swap", {})
+            source_mint = swap_event.get("sourceTokenMint")
+            dest_mint = swap_event.get("destinationTokenMint")
+            if source_mint and dest_mint:
+                pair = (source_mint, dest_mint)
                 pairs_counter[pair] = pairs_counter.get(pair, 0) + 1
-
         except Exception:
             continue
 
@@ -69,17 +56,17 @@ def get_top_pairs(pairs_counter, top_n=20):
 st.set_page_config(page_title="Solana 活跃交易对排行榜 (Helius-only)", layout="wide")
 st.title("Solana 活跃交易对排行榜")
 
-if st.button("🔄 刷新市场数据"):
-    st.info("开始刷新 Helius 交易数据...")
+if st.button("\ud83d\udd04 \u5237\u65b0\u5e02\u573a\u6570\u636e"):
+    st.info("\u5f00\u59cb\u5237\u65b0 Helius \u4ea4\u6613\u6570\u636e...")
 
     transactions = fetch_helius_transactions()
-    st.success(f"获取到交易记录数量: {len(transactions)}")
+    st.success(f"\u83b7\u53d6\u5230\u4ea4\u6613\u8bb0\u5f55\u6570\u91cf: {len(transactions)}")
 
-    st.info("在筛选活跃交易对...")
+    st.info("\u5728\u7b5b\u9009\u6d3b\u8dc3\u4ea4\u6613\u5bf9...")
     pairs_counter = filter_swap_pairs(transactions)
-    st.success(f"筛选出活跃交易对数量: {len(pairs_counter)}")
+    st.success(f"\u7b5b\u9009\u51fa\u6d3b\u8dc3\u4ea4\u6613\u5bf9\u6570\u91cf: {len(pairs_counter)}")
 
-    st.info("排序 Top 20 交易对...")
+    st.info("\u6392\u5e8f Top 20 \u4ea4\u6613\u5bf9...")
     top_pairs = get_top_pairs(pairs_counter)
 
     table_data = []
