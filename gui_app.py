@@ -1,151 +1,122 @@
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
-import json
+import pandas as pd
 
 SOL_MINT = "So11111111111111111111111111111111111111112"
-HELIUS_METADATA_API = "https://api.helius.xyz/v0/token-metadata?api-key=YOUR_HELIUS_API_KEY"
+API_URL = "https://quote-api.jup.ag/v1/markets"
 
 st.set_page_config(page_title="Solana Token Listener", layout="wide")
 
-def fetch_jupiter_markets(progress):
-    url = "https://quote-api.jup.ag/v1/markets"
-    progress.progress(0.1, "开始请求 Jupiter API...")
+# 辅助，格式化数量（大额千分位/2位小数）
+def pretty(n):
+    if n is None:
+        return "-"
+    if abs(n) >= 1_000_000:
+        return f"{n/1_000_000:.2f}M"
+    if abs(n) >= 1_000:
+        return f"{n/1_000:.2f}K"
+    return f"{n:.2f}"
+
+def fetch_jupiter_markets():
     try:
-        response = requests.get(url)
-        progress.progress(0.3, "收到响应，正在解析数据...")
-        data = response.json()
-        progress.progress(0.4, f"API 状态码: {response.status_code}")
-        progress.progress(0.5, f"API 响应预览: {response.text[:200]}")
-        return data
+        resp = requests.get(API_URL)
+        resp.raise_for_status()
+        return resp.json()
     except Exception as e:
-        progress.progress(1.0, f"API 请求失败: {e}")
-        st.error(f"API 请求失败，错误: {e}")
+        st.error(f"API 请求失败: {e}")
         return []
 
-def filter_markets(markets, days=7, progress=None):
-    cutoff_time = datetime.utcnow() - timedelta(days=days)
-    filtered = []
-    count_no_launch = 0
-    count_time_old = 0
-    count_not_sol = 0
+st.title("Solana 7日成交额Top30排行榜（SOL配对）")
+st.caption("拉取Jupiter所有市场，筛选7天内与SOL配对成交额最高Token。")
 
+# UI：刷数据按钮 & 进度反馈
+col0, col1 = st.columns([1, 4])
+with col0:
+    run = st.button("刷新排行榜", use_container_width=True)
+with col1:
+    log = st.empty()
+
+if run:
+    log.info("正在拉取 Jupiter 市场数据...")
+    markets = fetch_jupiter_markets()
+    st.info(f"Jupiter返回市场数量: {len(markets)}")
+    results = []
     for m in markets:
-        launch_time_str = m.get("launchTime")
-        if not launch_time_str:
-            count_no_launch += 1
-            continue
-        try:
-            dt = datetime.fromisoformat(launch_time_str.replace("Z", "+00:00"))
-        except Exception:
-            count_no_launch += 1
-            continue
-        if dt < cutoff_time:
-            count_time_old += 1
-            continue
-        if m.get("baseMint") == SOL_MINT or m.get("quoteMint") == SOL_MINT:
-            filtered.append(m)
+        # Jupiter volume字段有多种，优先volume7d，其次base/quoteVolume7d，其次base/quoteVolume
+        volume = None
+        vol_field = None
+        if m.get("volume7d"):
+            volume = m["volume7d"]
+            vol_field = "volume7d"
+        elif m.get("baseVolume7d") or m.get("quoteVolume7d"):
+            # 看SOL在base还是quote
+            if m.get("baseMint") == SOL_MINT:
+                volume = m.get("baseVolume7d")
+                vol_field = "baseVolume7d"
+            elif m.get("quoteMint") == SOL_MINT:
+                volume = m.get("quoteVolume7d")
+                vol_field = "quoteVolume7d"
+        elif m.get("baseVolume") or m.get("quoteVolume"):
+            if m.get("baseMint") == SOL_MINT:
+                volume = m.get("baseVolume")
+                vol_field = "baseVolume"
+            elif m.get("quoteMint") == SOL_MINT:
+                volume = m.get("quoteVolume")
+                vol_field = "quoteVolume"
         else:
-            count_not_sol += 1
-    if progress:
-        progress.progress(0.7, f"过滤完成：无launchTime: {count_no_launch}，太早: {count_time_old}，非SOL配对: {count_not_sol}")
-    return filtered
-
-def get_top_markets(filtered_markets, top_n=20, progress=None):
-    sorted_markets = sorted(filtered_markets, key=lambda x: x.get("liquidityUSD", 0), reverse=True)
-    if progress:
-        progress.progress(0.85, "流动性排序完成。")
-    return sorted_markets[:top_n]
-
-@st.cache_data(ttl=60*5)
-def get_token_icon_url(mint):
-    try:
-        url = f"{HELIUS_METADATA_API}&mint={mint}"
-        resp = requests.get(url)
-        resp.raise_for_status()
-        data = resp.json()
-        if not data:
-            return None
-        meta = data[0]
-        offchain = meta.get("offChainMetadata")
-        if not offchain:
-            offchain_uri = meta.get("offChainUri")
-            if not offchain_uri:
-                return None
-            r = requests.get(offchain_uri)
-            r.raise_for_status()
-            offchain = r.json()
-        image_url = offchain.get("image")
-        return image_url
-    except Exception:
-        return None
-
-st.markdown(
-    "<h1 style='text-align: left; color: #3c3c3c; margin-bottom: 12px;'>Solana 活跃交易对排行榜</h1>",
-    unsafe_allow_html=True,
-)
-
-st.markdown("点击下方按钮，刷新Solana链最新活跃Token市场。")
-progress = st.empty()
-cols = st.columns([1, 3])
-
-with cols[0]:
-    if st.button("刷新市场数据", use_container_width=True):
-        st.session_state['refresh'] = True
-
-# 用于进度区
-with cols[0]:
-    if st.session_state.get('refresh'):
-        progress_bar = st.progress(0.0, "初始化...")
-        markets = fetch_jupiter_markets(progress_bar)
-        progress_bar.progress(0.2, f"原始市场数量: {len(markets)}")
-        if len(markets) > 0:
-            st.write(f"字段示例: {list(markets[0].keys())}")
+            continue
+        # 过滤掉无成交量的市场
+        if not volume or volume == 0:
+            continue
+        # 只关心与SOL配对的
+        if m.get("baseMint") == SOL_MINT:
+            token_side = "SOL/" + (m.get("quoteSymbol") or m.get("quoteMint")[:6])
+            token_symbol = m.get("quoteSymbol") or m.get("quoteMint")[:6]
+            token_mint = m.get("quoteMint")
+            pair_dir = "SOL/Token"
+        elif m.get("quoteMint") == SOL_MINT:
+            token_side = (m.get("baseSymbol") or m.get("baseMint")[:6]) + "/SOL"
+            token_symbol = m.get("baseSymbol") or m.get("baseMint")[:6]
+            token_mint = m.get("baseMint")
+            pair_dir = "Token/SOL"
         else:
-            st.warning("API返回为空或不是列表。")
-        filtered = filter_markets(markets, days=7, progress=progress_bar)
-        progress_bar.progress(0.8, f"符合条件市场数量: {len(filtered)}")
-        top20 = get_top_markets(filtered, progress=progress_bar)
-        progress_bar.progress(1.0, f"完成，Top 20共{len(top20)}条。")
-        st.session_state['top20'] = top20
-        st.session_state['refresh'] = False
-
-with cols[1]:
-    top20 = st.session_state.get('top20', [])
-    if top20:
-        st.markdown("#### Top 20 交易对（按流动性USD）")
-        # 生成固定表格风格
-        import pandas as pd
-        show_data = []
-        base_icons = []
-        quote_icons = []
-        for m in top20:
-            base = m.get("baseSymbol", "N/A")
-            quote = m.get("quoteSymbol", "N/A")
-            base_icon_url = get_token_icon_url(m.get("baseMint"))
-            quote_icon_url = get_token_icon_url(m.get("quoteMint"))
-            base_icons.append(base_icon_url)
-            quote_icons.append(quote_icon_url)
-            show_data.append({
-                "Base": base,
-                "Quote": quote,
-                "Base Mint": m.get("baseMint"),
-                "Quote Mint": m.get("quoteMint"),
-                "Launch": m.get("launchTime", "")[:10],
-                "LiquidityUSD": round(m.get("liquidityUSD", 0), 2)
-            })
-        df = pd.DataFrame(show_data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        st.markdown("##### Token 图标一览")
-        for i, m in enumerate(top20):
-            row = st.columns([1, 1, 1, 1])
-            row[0].write(f"{i+1}. {m.get('baseSymbol', 'N/A')}")
-            if base_icons[i]:
-                row[1].image(base_icons[i], width=36)
-            else:
-                row[1].write("无图标")
-            row[2].write(f"{m.get('quoteSymbol', 'N/A')}")
-            if quote_icons[i]:
-                row[3].image(quote_icons[i], width=36)
-            else:
-                row[3].write("无图标")
+            continue
+        results.append({
+            "排名": 0,  # 占位
+            "Token": token_symbol,
+            "Mint": token_mint,
+            "方向": pair_dir,
+            "7日SOL成交量": volume,
+            "市场ID": m.get("id", "")
+        })
+    # 按成交量倒序
+    results = sorted(results, key=lambda x: x["7日SOL成交量"], reverse=True)
+    # 保证唯一性（Token+Mint+方向组合），取前30
+    top_tokens = []
+    token_seen = set()
+    for r in results:
+        uniq = f"{r['Token']}|{r['Mint']}|{r['方向']}"
+        if uniq not in token_seen:
+            top_tokens.append(r)
+            token_seen.add(uniq)
+        if len(top_tokens) >= 30:
+            break
+    # 更新排名
+    for idx, r in enumerate(top_tokens, 1):
+        r["排名"] = idx
+    # 展示：卡片区+表格区
+    st.success(f"本次共拉取 {len(markets)} 个市场，筛选出成交额前30的Token。")
+    st.markdown("#### Top 30 代币（按7日SOL成交量）")
+    cols = st.columns(3)
+    for i, r in enumerate(top_tokens):
+        with cols[i%3]:
+            st.markdown(f"**{r['排名']}\. {r['Token']}**")
+            st.markdown(f"`{r['Mint']}`")
+            st.markdown(f"方向：{r['方向']}")
+            st.markdown(f"7日SOL成交量：:green[{pretty(r['7日SOL成交量'])}]\n")
+    # 全表
+    st.markdown("---")
+    df = pd.DataFrame(top_tokens)
+    st.dataframe(df, hide_index=True, use_container_width=True)
+    log.success("排行榜刷新完成。")
