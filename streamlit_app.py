@@ -2,21 +2,38 @@
 
 import streamlit as st
 import requests
-from datetime import datetime, timedelta
 
 # Solana 原生代币
 SOL_MINT = "So11111111111111111111111111111111111111112"
 
 # 替换成你的 Helius API Key
 HELIUS_API_KEY = "f71ab4f1-900c-43a7-8ea2-9b4a440b008e"
-HELIUS_TRANSACTIONS_API = f"https://api.helius.xyz/v0/addresses/{SOL_MINT}/transactions?api-key={HELIUS_API_KEY}"
 
 # ---- 函数 ----
 
 def fetch_helius_transactions(limit=500):
-    url = HELIUS_TRANSACTIONS_API + f"&limit={limit}"
+    url = f"https://api.helius.xyz/v0/transactions?api-key={HELIUS_API_KEY}"
+    body = {
+        "limit": limit,
+        "sortDirection": "DESC",
+        "accountType": "token",
+        "filters": [
+            {
+                "programId": "RVKd61ztZW9c8dKLepS7aexnrShcFsvAQJjz2hG1JwK",  # Orca Swap
+                "type": "all"
+            },
+            {
+                "programId": "EhhTK3SB9kRGn9zixd9UwJdujLja64dp1USe41sVUJM9",  # Raydium Swap
+                "type": "all"
+            },
+            {
+                "programId": "9LzCMqMeAeGH15DE6B1JCM6z6P9eq2pxDHnC9H2BdXYY",  # Jupiter Aggregator
+                "type": "all"
+            }
+        ]
+    }
     try:
-        response = requests.get(url)
+        response = requests.post(url, json=body)
         response.raise_for_status()
         data = response.json()
         return data.get("transactions", [])
