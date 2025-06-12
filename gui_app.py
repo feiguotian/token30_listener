@@ -1,6 +1,5 @@
 import streamlit as st
 import requests
-from datetime import datetime, timedelta
 import pandas as pd
 
 SOL_MINT = "So11111111111111111111111111111111111111112"
@@ -26,14 +25,14 @@ def fetch_jupiter_markets():
         try:
             return resp.json()
         except Exception as e:
-            st.error(f"无法解析API响应为JSON（可能是限流或服务器异常）: {e}")
+            st.error(f"无法解析API响应为JSON: {e}")
             return []
     except Exception as e:
         st.error(f"API 请求失败: {e}")
         return []
 
-st.title("Solana 7日成交额Top30排行榜（SOL配对）")
-st.caption("拉取Jupiter所有市场，筛选7天内与SOL配对成交额最高Token。")
+st.title("Solana 最新30个SOL配对市场（按交易额排序）")
+st.caption("拉取Jupiter所有市场，筛选最新30个与SOL配对市场，并按成交额排序。")
 
 col0, col1 = st.columns([1, 4])
 with col0:
@@ -45,69 +44,52 @@ if run:
     log.info("正在拉取 Jupiter 市场数据...")
     markets = fetch_jupiter_markets()
     st.info(f"Jupiter返回市场数量: {len(markets)}")
-    results = []
+    # 过滤出与SOL配对的市场，按API顺序取最新30个
+    sol_markets = []
     for m in markets:
-        # Jupiter volume字段有多种，优先volume7d，其次base/quoteVolume7d，其次base/quoteVolume
-        volume = None
-        if m.get("volume7d"):
-            volume = m["volume7d"]
-        elif m.get("baseVolume7d") or m.get("quoteVolume7d"):
+        if m.get("baseMint") == SOL_MINT or m.get("quoteMint") == SOL_MINT:
+            # Jupiter volume字段多种，优先volume7d，其次base/quoteVolume7d，其次base/quoteVolume，其次volume
+            volume = m.get("volume7d")
+            if not volume:
+                if m.get("baseMint") == SOL_MINT:
+                    volume = m.get("baseVolume7d") or m.get("baseVolume") or m.get("volume")
+                elif m.get("quoteMint") == SOL_MINT:
+                    volume = m.get("quoteVolume7d") or m.get("quoteVolume") or m.get("volume")
+            # 方向判断
             if m.get("baseMint") == SOL_MINT:
-                volume = m.get("baseVolume7d")
-            elif m.get("quoteMint") == SOL_MINT:
-                volume = m.get("quoteVolume7d")
-        elif m.get("baseVolume") or m.get("quoteVolume"):
-            if m.get("baseMint") == SOL_MINT:
-                volume = m.get("baseVolume")
-            elif m.get("quoteMint") == SOL_MINT:
-                volume = m.get("quoteVolume")
-        else:
-            continue
-        if not volume or volume == 0:
-            continue
-        if m.get("baseMint") == SOL_MINT:
-            token_symbol = m.get("quoteSymbol") or m.get("quoteMint")[:6]
-            token_mint = m.get("quoteMint")
-            pair_dir = "SOL/Token"
-        elif m.get("quoteMint") == SOL_MINT:
-            token_symbol = m.get("baseSymbol") or m.get("baseMint")[:6]
-            token_mint = m.get("baseMint")
-            pair_dir = "Token/SOL"
-        else:
-            continue
-        results.append({
-            "排名": 0,
-            "Token": token_symbol,
-            "Mint": token_mint,
-            "方向": pair_dir,
-            "7日SOL成交量": volume,
-            "市场ID": m.get("id", "")
-        })
-    results = sorted(results, key=lambda x: x["7日SOL成交量"], reverse=True)
-    top_tokens = []
-    token_seen = set()
-    for r in results:
-        uniq = f"{r['Token']}|{r['Mint']}|{r['方向']}"
-        if uniq not in token_seen:
-            top_tokens.append(r)
-            token_seen.add(uniq)
-        if len(top_tokens) >= 30:
+                token_symbol = m.get("quoteSymbol") or m.get("quoteMint")[:6]
+                token_mint = m.get("quoteMint")
+                pair_dir = "SOL/Token"
+            else:
+                token_symbol = m.get("baseSymbol") or m.get("baseMint")[:6]
+                token_mint = m.get("baseMint")
+                pair_dir = "Token/SOL"
+            sol_markets.append({
+                "Token": token_symbol,
+                "Mint": token_mint,
+                "方向": pair_dir,
+                "成交额": volume or 0,
+                "市场ID": m.get("id", "")
+            })
+        if len(sol_markets) >= 30:
             break
-    for idx, r in enumerate(top_tokens, 1):
+    # 按成交额排序
+    sol_markets = sorted(sol_markets, key=lambda x: x["成交额"], reverse=True)
+    for idx, r in enumerate(sol_markets, 1):
         r["排名"] = idx
-    if len(top_tokens) == 0:
-        st.warning("⚠️ 未获取到有效的Top30市场数据，请检查API状态、限流、或市场活跃度。")
+    if len(sol_markets) == 0:
+        st.warning("⚠️ 未获取到有效的SOL配对市场数据，请检查API状态。")
     else:
-        st.success(f"本次共拉取 {len(markets)} 个市场，筛选出成交额前30的Token。")
-        st.markdown("#### Top 30 代币（按7日SOL成交量）")
+        st.success(f"共拉取 {len(markets)} 个市场，已筛选并显示最新30个SOL配对市场，现按成交额排序。")
+        st.markdown("#### 最新30个与SOL配对市场（成交额降序）")
         cols = st.columns(3)
-        for i, r in enumerate(top_tokens):
+        for i, r in enumerate(sol_markets):
             with cols[i%3]:
-                st.markdown(f"**{r['排名']}\\. {r['Token']}**")
+                st.markdown(f"**{r['排名']}\. {r['Token']}**")
                 st.markdown(f"`{r['Mint']}`")
                 st.markdown(f"方向：{r['方向']}")
-                st.markdown(f"7日SOL成交量：:green[{pretty(r['7日SOL成交量'])}]\n")
+                st.markdown(f"成交额：:green[{pretty(r['成交额'])}]\n")
         st.markdown("---")
-        df = pd.DataFrame(top_tokens)
+        df = pd.DataFrame(sol_markets)
         st.dataframe(df, hide_index=True, use_container_width=True)
     log.success("排行榜刷新完成。")
