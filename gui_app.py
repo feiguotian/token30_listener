@@ -4,7 +4,7 @@ import pandas as pd
 
 # 你的 Birdeye API Key
 BIRDEYE_API_KEY = "c1bbf5f9be294136857f6f089c93591b"
-BIRDEYE_API_URL = "BIRDEYE_API_URL = "https://public-api.birdeye.so/defi/v2/markets”
+BIRDEYE_API_URL = "BIRDEYE_API_URL = "https://public-api.birdeye.so/defi/v2/markets"
 SOL_MINT = "So11111111111111111111111111111111111111112"
 
 st.set_page_config(page_title="Solana Token Listener", layout="wide")
