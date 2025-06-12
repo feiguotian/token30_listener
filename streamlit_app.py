@@ -13,12 +13,8 @@ def fetch_helius_transactions(limit=500):
     body = {
         "limit": limit,
         "sortDirection": "DESC",
-        "accountType": "token",
-        "filters": [
-            {
-                "type": "swap"
-            }
-        ]
+        "accountType": "token"
+        # No filters
     }
     try:
         response = requests.post(url, json=body)
