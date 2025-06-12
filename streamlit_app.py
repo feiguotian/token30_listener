@@ -3,10 +3,10 @@
 import streamlit as st
 import requests
 
-# 替换成你的 Helius API Key
+# Replace with your Helius API Key
 HELIUS_API_KEY = "f71ab4f1-900c-43a7-8ea2-9b4a440b008e"
 
-# ---- 函数 ----
+# ---- Functions ----
 
 def fetch_helius_transactions(limit=500):
     url = f"https://api.helius.xyz/v0/transactions?api-key={HELIUS_API_KEY}"
@@ -25,10 +25,10 @@ def fetch_helius_transactions(limit=500):
         response.raise_for_status()
         data = response.json()
 
-        # Helius 返回的数据是列表，直接返回
+        # Helius returns a list
         return data if isinstance(data, list) else []
     except Exception as e:
-        st.error(f"API 请求失败：{e}")
+        st.error(f"API request failed: {e}")
         return []
 
 def filter_swap_pairs(transactions):
@@ -53,20 +53,20 @@ def get_top_pairs(pairs_counter, top_n=20):
 
 # ---- Streamlit UI ----
 
-st.set_page_config(page_title="Solana 活跃交易对排行榜 (Helius-only)", layout="wide")
-st.title("Solana 活跃交易对排行榜")
+st.set_page_config(page_title="Solana Active Token Pairs Ranking (Helius-only)", layout="wide")
+st.title("Solana Active Token Pairs Ranking")
 
-if st.button("刷新市场数据"):
-    st.info("\u5f00\u59cb\u5237\u65b0 Helius \u4ea4\u6613\u6570\u636e...")
+if st.button("Refresh Market Data"):
+    st.info("Start refreshing Helius transaction data...")
 
     transactions = fetch_helius_transactions()
-    st.success(f"\u83b7\u53d6\u5230\u4ea4\u6613\u8bb0\u5f55\u6570\u91cf: {len(transactions)}")
+    st.success(f"Fetched transaction count: {len(transactions)}")
 
-    st.info("\u5728\u7b5b\u9009\u6d3b\u8dc3\u4ea4\u6613\u5bf9...")
+    st.info("Filtering active token pairs...")
     pairs_counter = filter_swap_pairs(transactions)
-    st.success(f"\u7b5b\u9009\u51fa\u6d3b\u8dc3\u4ea4\u6613\u5bf9\u6570\u91cf: {len(pairs_counter)}")
+    st.success(f"Filtered active token pairs count: {len(pairs_counter)}")
 
-    st.info("\u6392\u5e8f Top 20 \u4ea4\u6613\u5bf9...")
+    st.info("Sorting Top 20 token pairs...")
     top_pairs = get_top_pairs(pairs_counter)
 
     table_data = []
