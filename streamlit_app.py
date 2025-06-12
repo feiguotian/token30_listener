@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 SOL_MINT = "So11111111111111111111111111111111111111112"
 
 # 替换成你的 Helius API Key
-HELIUS_API_KEY = "YOUR_HELIUS_API_KEY"
+HELIUS_API_KEY = "f71ab4f1-900c-43a7-8ea2-9b4a440b008e"
 HELIUS_TRANSACTIONS_API = f"https://api.helius.xyz/v0/addresses/{SOL_MINT}/transactions?api-key={HELIUS_API_KEY}"
 
 # ---- 函数 ----
