@@ -2,96 +2,75 @@ import streamlit as st
 import requests
 import pandas as pd
 
-DEX_API_URL = "https://api.dexscreener.com/latest/dex/pairs/solana"
-SOL_SYMBOL = "SOL"
+# 请填写你的 Helius API Key
+HELIUS_API_KEY = "f71ab4f1-900c-43a7-8ea2-9b4a440b008e"
+HELIUS_ENDPOINT = f"https://api.helius.xyz/v0/addresses/{{address}}/transactions?api-key={HELIUS_API_KEY}"
 
-st.set_page_config(page_title="Solana Token Listener (DexScreener)", layout="wide")
+# 示例：Orca Swap 程序地址，Solana主流swap合约之一（可扩展更多池）
+ORCA_SWAP_PROGRAM = "9WwG3z8HkUnkzrH2xkWXDioTfF7M7bTq3U6Xn5wrGHs9"
+SOL_MINT = "So11111111111111111111111111111111111111112"
 
-def pretty(n):
-    if n is None:
-        return "-"
+st.set_page_config(page_title="Helius链上SOL配对排行Demo", layout="wide")
+st.title("Solana 链上近500笔与SOL配对的swap（Orca演示版）")
+st.caption("用Helius API聚合Orca Swap合约，近500笔swap，提取所有与SOL配对的Token按swap量排行。仅为聚合思路演示，非全网榜。")
+
+def fetch_orca_swaps():
+    url = HELIUS_ENDPOINT.format(address=ORCA_SWAP_PROGRAM)
     try:
-        n = float(n)
-    except:
-        return str(n)
-    if abs(n) >= 1_000_000:
-        return f"{n/1_000_000:.2f}M"
-    if abs(n) >= 1_000:
-        return f"{n/1_000:.2f}K"
-    return f"{n:.2f}"
-
-def fetch_dexscreener_markets():
-    try:
-        resp = requests.get(DEX_API_URL)
-        st.info(f"DexScreener API状态码: {resp.status_code}")
+        resp = requests.get(url)
+        st.info(f"Helius API状态码: {resp.status_code}")
         st.caption(f"API响应前200字: {resp.text[:200]}")
         resp.raise_for_status()
-        data = resp.json()
-        return data.get('pairs', data)
+        return resp.json()
     except Exception as e:
         st.error(f"API 请求失败: {e}")
         return []
 
-st.title("Solana 最新30个SOL配对市场（DexScreener·按24h美元成交额排序）")
-st.caption("拉取DexScreener全市场，筛选最新30个与SOL配对市场，并按24小时USD成交额排序。无需API Key，数据来自主流Solana DEX聚合。")
+def extract_sol_swaps(transactions):
+    # 聚合：统计swap事件里包含SOL的token
+    counter = {}
+    for tx in transactions:
+        # 只看包含swap和SOL的事件
+        inner = tx.get("events", [])
+        # 新版Helius会在events内标注"swap"
+        for ev in inner:
+            if ev.get("type") == "swap":
+                source = ev.get("source")
+                base = ev.get("nativeInputMint") or ev.get("inputMint")
+                quote = ev.get("nativeOutputMint") or ev.get("outputMint")
+                if not base or not quote:
+                    continue
+                if SOL_MINT in [base, quote]:
+                    # 另一个token
+                    token = quote if base == SOL_MINT else base
+                    amount = float(ev.get("nativeInputAmount", 0)) if base == SOL_MINT else float(ev.get("nativeOutputAmount", 0))
+                    if token not in counter:
+                        counter[token] = {"swap_count": 0, "amount": 0, "last_source": source}
+                    counter[token]["swap_count"] += 1
+                    counter[token]["amount"] += amount
+    return counter
 
 col0, col1 = st.columns([1, 4])
 with col0:
-    run = st.button("刷新排行榜", use_container_width=True)
+    run = st.button("拉取Orca/SOL近500笔swap", use_container_width=True)
 with col1:
     log = st.empty()
 
 if run:
-    log.info("正在拉取 DexScreener 市场数据...")
-    markets = fetch_dexscreener_markets()
-    st.info(f"DexScreener返回市场数量: {len(markets)}")
-    sol_markets = []
-    for m in markets:
-        base = m.get("baseToken", {})
-        quote = m.get("quoteToken", {})
-        base_sym = base.get("symbol", "-")
-        quote_sym = quote.get("symbol", "-")
-        base_addr = base.get("address", "")
-        quote_addr = quote.get("address", "")
-        # 必须有一侧为SOL
-        if base_sym == SOL_SYMBOL or quote_sym == SOL_SYMBOL:
-            if base_sym == SOL_SYMBOL:
-                token_symbol = quote_sym
-                token_addr = quote_addr
-                pair_dir = "SOL/Token"
-                vol = m.get("volume24hUsd", 0)
-            else:
-                token_symbol = base_sym
-                token_addr = base_addr
-                pair_dir = "Token/SOL"
-                vol = m.get("volume24hUsd", 0)
-            sol_markets.append({
-                "Token": token_symbol,
-                "地址": token_addr,
-                "方向": pair_dir,
-                "24h美元成交额": vol,
-                "DEX": m.get("dexId", "")
-            })
-        if len(sol_markets) >= 30:
-            break
-    # 按24h成交额USD排序
-    sol_markets = sorted(sol_markets, key=lambda x: float(x["24h美元成交额"] or 0), reverse=True)
-    for idx, r in enumerate(sol_markets, 1):
-        r["排名"] = idx
-    if len(sol_markets) == 0:
-        st.warning("⚠️ 未获取到有效的SOL配对市场数据，请检查API状态。")
+    log.info("正在拉取 Helius 交易数据...")
+    txs = fetch_orca_swaps()
+    st.info(f"Orca近500笔链上swap交易记录已抓取。")
+    if not txs:
+        st.warning("⚠️ 未获取到交易数据，请检查API/Key/额度。")
     else:
-        st.success(f"共拉取 {len(markets)} 个市场，已筛选并显示最新30个SOL配对市场，现按24小时USD成交额排序。")
-        st.markdown("#### 最新30个与SOL配对市场（24h美元成交额降序）")
-        cols = st.columns(3)
-        for i, r in enumerate(sol_markets):
-            with cols[i%3]:
-                st.markdown(f"**{r['排名']}\. {r['Token']}**")
-                st.markdown(f"`{r['地址']}`")
-                st.markdown(f"方向：{r['方向']}")
-                st.markdown(f"24h美元成交额：:green[{pretty(r['24h美元成交额'])}]\n")
-                st.markdown(f"DEX来源: `{r['DEX']}`")
-        st.markdown("---")
-        df = pd.DataFrame(sol_markets)
+        rank = extract_sol_swaps(txs)
+        # 取前10
+        rank_list = sorted(rank.items(), key=lambda x: x[1]["swap_count"], reverse=True)[:10]
+        st.success(f"已提取出{len(rank_list)}个与SOL配对的Token。")
+        st.markdown("#### Orca合约与SOL配对Token近500笔swap统计Top10")
+        df = pd.DataFrame([
+            {"Token Mint": k, "Swap次数": v["swap_count"], "累计Swap金额": v["amount"], "数据来源": v["last_source"]}
+            for k, v in rank_list
+        ])
         st.dataframe(df, hide_index=True, use_container_width=True)
-    log.success("排行榜刷新完成。")
+    log.success("聚合完成。")
