@@ -56,7 +56,7 @@ def get_top_pairs(pairs_counter, top_n=20):
 st.set_page_config(page_title="Solana 活跃交易对排行榜 (Helius-only)", layout="wide")
 st.title("Solana 活跃交易对排行榜")
 
-if st.button("\ud83d\udd04 \u5237\u65b0\u5e02\u573a\u6570\u636e"):
+if st.button("刷新市场数据"):
     st.info("\u5f00\u59cb\u5237\u65b0 Helius \u4ea4\u6613\u6570\u636e...")
 
     transactions = fetch_helius_transactions()
