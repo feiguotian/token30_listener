@@ -3,9 +3,6 @@
 import streamlit as st
 import requests
 
-# Solana 原生代币
-SOL_MINT = "So11111111111111111111111111111111111111112"
-
 # 替换成你的 Helius API Key
 HELIUS_API_KEY = "f71ab4f1-900c-43a7-8ea2-9b4a440b008e"
 
@@ -19,16 +16,7 @@ def fetch_helius_transactions(limit=500):
         "accountType": "token",
         "filters": [
             {
-                "programId": "RVKd61ztZW9c8dKLepS7aexnrShcFsvAQJjz2hG1JwK",  # Orca Swap
-                "type": "all"
-            },
-            {
-                "programId": "EhhTK3SB9kRGn9zixd9UwJdujLja64dp1USe41sVUJM9",  # Raydium Swap
-                "type": "all"
-            },
-            {
-                "programId": "9LzCMqMeAeGH15DE6B1JCM6z6P9eq2pxDHnC9H2BdXYY",  # Jupiter Aggregator
-                "type": "all"
+                "type": "swap"
             }
         ]
     }
@@ -36,7 +24,9 @@ def fetch_helius_transactions(limit=500):
         response = requests.post(url, json=body)
         response.raise_for_status()
         data = response.json()
-        return data.get("transactions", [])
+
+        # Helius 返回的数据是一个列表，而不是 dict，直接返回 list
+        return data if isinstance(data, list) else []
     except Exception as e:
         st.error(f"API 请求失败：{e}")
         return []
@@ -46,14 +36,25 @@ def filter_swap_pairs(transactions):
 
     for tx in transactions:
         try:
-            token_transfers = tx.get("tokenTransfers", [])
+            inner_instructions = tx.get("innerInstructions", [])
+
+            token_transfers = []
+            for inner in inner_instructions:
+                instructions = inner.get("instructions", [])
+                for inst in instructions:
+                    parsed = inst.get("parsed", {})
+                    if parsed.get("type") == "transfer":
+                        info = parsed.get("info", {})
+                        mint = info.get("mint")
+                        if mint:
+                            token_transfers.append(mint)
+
             if len(token_transfers) >= 2:
-                base_mint = token_transfers[0].get("mint")
-                quote_mint = token_transfers[1].get("mint")
-                if not base_mint or not quote_mint:
-                    continue
+                base_mint = token_transfers[0]
+                quote_mint = token_transfers[1]
                 pair = (base_mint, quote_mint)
                 pairs_counter[pair] = pairs_counter.get(pair, 0) + 1
+
         except Exception:
             continue
 
