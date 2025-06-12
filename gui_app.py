@@ -50,7 +50,33 @@ def get_top_markets(filtered_markets, top_n=20):
     sorted_markets = sorted(filtered_markets, key=lambda x: x.get("liquidityUSD", 0), reverse=True)
     return sorted_markets[:top_n]
 
+def get_token_icon_url(mint):
+    try:
+        url = f"{HELIUS_METADATA_API}&mint={mint}"
+        resp = requests.get(url)
+        resp.raise_for_status()
+        data = resp.json()
+        if not data:
+            return None
+        meta = data[0]
+        offchain = meta.get("offChainMetadata")
+        if not offchain:
+            offchain_uri = meta.get("offChainUri")
+            if not offchain_uri:
+                return None
+            r = requests.get(offchain_uri)
+            r.raise_for_status()
+            offchain = r.json()
+        image_url = offchain.get("image")
+        return image_url
+    except Exception:
+        return None
+
 st.title("Solana 活跃交易对排行榜")
+
+if 'top20' not in st.session_state:
+    st.session_state['top20'] = []
+
 if st.button("刷新市场数据"):
     st.write("==============================")
     st.write(f"开始刷新 Jupiter 市场数据... {datetime.now().strftime('%H:%M:%S')}")
@@ -68,7 +94,30 @@ if st.button("刷新市场数据"):
         st.warning("⚠️ 警告: 没有符合过滤条件的市场！请检查API结构或过滤规则是否正确。")
     st.write("正在按流动性排序...")
     top20 = get_top_markets(filtered)
+    st.session_state['top20'] = top20
     st.write("Top 20 结果如下：")
     st.dataframe(top20)
     st.success(f"刷新完成，共显示 {len(top20)} 个市场。")
 
+if st.button("显示Top 20 Token图标"):
+    top20 = st.session_state.get('top20', [])
+    for i, m in enumerate(top20):
+        base_name = m.get("baseSymbol", "N/A")
+        base_mint = m.get("baseMint")
+        quote_name = m.get("quoteSymbol", "N/A")
+        quote_mint = m.get("quoteMint")
+
+        base_icon_url = get_token_icon_url(base_mint)
+        quote_icon_url = get_token_icon_url(quote_mint)
+
+        cols = st.columns(4)
+        cols[0].write(f"{i+1}. {base_name}")
+        if base_icon_url:
+            cols[1].image(base_icon_url, width=40)
+        else:
+            cols[1].write("无图标")
+        cols[2].write(f"{quote_name}")
+        if quote_icon_url:
+            cols[3].image(quote_icon_url, width=40)
+        else:
+            cols[3].write("无图标")
