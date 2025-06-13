@@ -75,11 +75,3 @@ if st.button("Refresh Market Data"):
         })
 
     st.table(table_data)
-
-
-
-
-
-
-
-
