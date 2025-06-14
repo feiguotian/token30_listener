@@ -29,17 +29,19 @@ def fetch_data(interval):
         "interval": interval
     }
     response = requests.get(url, params=params)
+    
+    # 如果请求成功，返回数据，否则输出错误信息
     if response.status_code == 200:
         return response.json()
     else:
-        st.error(f"请求失败，状态码：{response.status_code}")
+        st.error(f"请求失败，状态码：{response.status_code}，返回信息：{response.text}")
         return None
 
 # 获取K线数据
 for display_name, interval in interval_map.items():
     with st.spinner(f"正在下载 {display_name} ..."):
         ohlcv = fetch_data(interval)
-
+        
         if ohlcv:
             # 数据格式处理
             if "prices" in ohlcv:
@@ -56,6 +58,9 @@ for display_name, interval in interval_map.items():
                 st.warning(f"{display_name} 数据获取失败：无价格数据")
         else:
             st.warning(f"{display_name} 数据获取失败：请求返回为空")
+        
+        # 延迟下一次请求，避免过于频繁
+        time.sleep(2)  # 等待2秒钟再发起下一个请求
 
 st.divider()
 st.subheader("各周期K线数据下载")
