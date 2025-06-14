@@ -4,3 +4,6 @@ pillow
 python-binance
 pandas
 streamlit
+streamlit
+pandas
+ccxt
