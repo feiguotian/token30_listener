@@ -29,26 +29,33 @@ def fetch_data(interval):
         "interval": interval
     }
     response = requests.get(url, params=params)
-    return response.json()
+    if response.status_code == 200:
+        return response.json()
+    else:
+        st.error(f"请求失败，状态码：{response.status_code}")
+        return None
 
 # 获取K线数据
 for display_name, interval in interval_map.items():
     with st.spinner(f"正在下载 {display_name} ..."):
         ohlcv = fetch_data(interval)
-        
-        # 数据格式处理
-        if "prices" in ohlcv:
-            df = pd.DataFrame(ohlcv["prices"], columns=["timestamp", "price"])
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-            df["Open"] = df["price"]
-            df["High"] = df["price"]
-            df["Low"] = df["price"]
-            df["Close"] = df["price"]
-            df["Volume"] = 0  # CoinGecko API没有提供交易量数据，设置为0
-            data_dict[display_name] = df[["timestamp", "Open", "High", "Low", "Close", "Volume"]]
-            st.progress(1.0, text=f"{display_name} 已获取 {len(df)} 条记录")
+
+        if ohlcv:
+            # 数据格式处理
+            if "prices" in ohlcv:
+                df = pd.DataFrame(ohlcv["prices"], columns=["timestamp", "price"])
+                df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+                df["Open"] = df["price"]
+                df["High"] = df["price"]
+                df["Low"] = df["price"]
+                df["Close"] = df["price"]
+                df["Volume"] = 0  # CoinGecko API没有提供交易量数据，设置为0
+                data_dict[display_name] = df[["timestamp", "Open", "High", "Low", "Close", "Volume"]]
+                st.progress(1.0, text=f"{display_name} 已获取 {len(df)} 条记录")
+            else:
+                st.warning(f"{display_name} 数据获取失败：无价格数据")
         else:
-            st.warning(f"{display_name} 数据获取失败")
+            st.warning(f"{display_name} 数据获取失败：请求返回为空")
 
 st.divider()
 st.subheader("各周期K线数据下载")
