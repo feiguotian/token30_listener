@@ -5,7 +5,7 @@ import time
 
 st.title("BTC/USDT 各周期K线数据批量下载（CoinGecko）")
 
-st.info("程序自动获取过去90天的15分钟、1小时、4小时、1天K线（现货），全部可下载为CSV。\n"
+st.info("程序自动获取过去30天的15分钟、1小时、4小时、1天K线（现货），全部可下载为CSV。\n"
         "数据源：CoinGecko API，无需API Key，稳定可靠。")
 
 interval_map = {
@@ -18,14 +18,14 @@ data_dict = {}
 
 # 统一时间区间
 now = int(time.time())
-since = now - 90 * 24 * 60 * 60  # 过去3个月的时间
+since = now - 30 * 24 * 60 * 60  # 过去30天的时间
 
 # 请求CoinGecko的历史市场数据接口
 def fetch_data(interval):
     url = f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
     params = {
         "vs_currency": "usd",
-        "days": "90",  # 获取过去90天的数据
+        "days": "30",  # 获取过去30天的数据
         "interval": interval
     }
     response = requests.get(url, params=params)
@@ -57,8 +57,8 @@ for display_name, df in data_dict.items():
     st.download_button(
         label=f"下载 {display_name} CSV",
         data=csv,
-        file_name=f"BTCUSDT_{interval_map[display_name]}_last90days.csv",
+        file_name=f"BTCUSDT_{interval_map[display_name]}_last30days.csv",
         mime="text/csv"
     )
 
-st.caption("数据来源：CoinGecko API，全部为BTCUSDT现货近90天K线，自动适配不同周期，数据直出。")
+st.caption("数据来源：CoinGecko API，全部为BTCUSDT现货近30天K线，自动适配不同周期，数据直出。")
